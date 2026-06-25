@@ -331,7 +331,7 @@ function calcUrgent(){
     return{y,m,d:dueDay,date:new Date(y,m,dueDay),fmt:`${dueDay} ${THM[m]} ${y+543}`};
   };
   const check=(it,type)=>{
-    const done=type==='car'?(it.contractEndDate?parseThDate(it.contractEndDate)<now:false):it.balance<=0;
+    const done=type==='car'?(it.contractEndDate?parseThDate(it.contractEndDate)<now:false):((it.balance||0)<=0&&(it.minPay||0)<=0);
     if(done)return;
     const amt=type==='car'?it.monthly:Math.min(it.minPay||0,it.balance||0);
     const nd=nextOcc(it.dueDay);
@@ -542,7 +542,7 @@ function carHTML(c,urgent){
 }
 
 function ccHTML(c,urgent){
-  const done=c.balance<=0;
+  const done=(c.balance||0)<=0&&(c.minPay||0)<=0;
   const bd=badgeOf(c,done);
   const urg=urgent.find(u=>u.id===c.id);
   const isOpen=histOpen.has(c.id);

@@ -258,24 +258,40 @@ function delImg(k){if(!k)return;try{localStorage.removeItem(k);}catch(e){}delete
 function loadImgsFor(pmts){(pmts||[]).forEach(p=>{if(p.imgKey&&!imgCache[p.imgKey]){const v=localStorage.getItem(p.imgKey);if(v)imgCache[p.imgKey]=v;}});}
 
 function calcUrgent(){
-  const today=new Date().getDate();
+  const now=new Date(),todayD=now.getDate();
+  const THM=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
   const isPaid=it=>it.lastPaid&&ymOf(new Date(it.lastPaid))===todayYM();
   const items=[];
+  // คำนวณวันถัดไป (เดือนนี้ถ้ายังไม่ถึง, เดือนหน้าถ้าผ่านไปแล้ว)
+  const nextOcc=(dueDay)=>{
+    let y=now.getFullYear(),m=now.getMonth();
+    if(todayD>dueDay){m++;if(m>11){m=0;y++;}}
+    return{y,m,d:dueDay,date:new Date(y,m,dueDay),fmt:`${dueDay} ${THM[m]} ${y+543}`};
+  };
   const check=(it,type)=>{
-    const done=type==='car'?it.paid>=it.total:it.balance<=0;
-    if(done||isPaid(it))return;
-    const diff=it.dueDay-today;
+    const done=type==='car'?(it.contractEndDate?parseThDate(it.contractEndDate)<now:false):it.balance<=0;
+    if(done)return;
+    const nd=nextOcc(it.dueDay);
+    const diffDays=Math.round((nd.date-now)/(1000*60*60*24));
+    const amt=type==='car'?it.monthly:Math.min(it.minPay||0,it.balance||0);
+    const nextDueFmt=nd.fmt;
+    if(isPaid(it)){
+      // จ่ายแล้วเดือนนี้ → แสดงกำหนดถัดไปถ้าใกล้แล้ว
+      if(diffDays<=notifPrefs.warnDays)
+        items.push({id:it.id,name:it.name,type,level:'next',diff:diffDays,dueDay:it.dueDay,amt,nextDueFmt});
+      return;
+    }
+    // ยังไม่ได้จ่าย
     let level,dd;
-    if(diff<0){level='overdue';dd=Math.abs(diff);}
-    else if(diff===0){level='today';dd=0;}
-    else if(diff<=notifPrefs.warnDays){level='soon';dd=diff;}
+    if(todayD>it.dueDay){level='overdue';dd=todayD-it.dueDay;}
+    else if(todayD===it.dueDay){level='today';dd=0;}
+    else if(it.dueDay-todayD<=notifPrefs.warnDays){level='soon';dd=it.dueDay-todayD;}
     else return;
-    const amt=type==='car'?it.monthly:Math.min(it.minPay||0,it.balance);
-    items.push({id:it.id,name:it.name,type,level,diff:dd,dueDay:it.dueDay,amt});
+    items.push({id:it.id,name:it.name,type,level,diff:dd,dueDay:it.dueDay,amt,nextDueFmt});
   };
   data.carLoans.forEach(c=>check(c,'car'));
   data.creditCards.forEach(c=>check(c,'card'));
-  const p={overdue:0,today:1,soon:2};
+  const p={overdue:0,today:1,soon:2,next:3};
   return items.sort((a,b)=>p[a.level]-p[b.level]||a.diff-b.diff);
 }
 function isPaidThisMo(it){return it.lastPaid&&ymOf(new Date(it.lastPaid))===todayYM();}
@@ -290,17 +306,24 @@ const TH_MONTHS=['มกราคม','กุมภาพันธ์','มี�
 const TH_MONTHS_S=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
 function fmtEndDate(s){
   if(!s||s==='-')return'-';
-  // รองรับ DD/MM/YYYY (พ.ศ.)
-  const m=s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if(m){return `${parseInt(m[1])} ${TH_MONTHS[parseInt(m[2])-1]} ${m[3]}`;}
+  // ISO format: YYYY-MM-DD (CE) → แปลงเป็นพ.ศ.
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(iso){return `${parseInt(iso[3])} ${TH_MONTHS[parseInt(iso[2])-1]} ${parseInt(iso[1])+543}`;}
+  // DD/MM/YYYY (พ.ศ.)
+  const dmy=s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if(dmy){return `${parseInt(dmy[1])} ${TH_MONTHS[parseInt(dmy[2])-1]} ${dmy[3]}`;}
   return s;
 }
 function parseThDate(s){
   if(!s)return null;
-  const m=s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if(!m)return null;
-  const ceY=parseInt(m[3])>2500?parseInt(m[3])-543:parseInt(m[3]);
-  return new Date(ceY,parseInt(m[2])-1,parseInt(m[1]),23,59,59);
+  // ISO format YYYY-MM-DD (CE)
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(iso)return new Date(parseInt(iso[1]),parseInt(iso[2])-1,parseInt(iso[3]),23,59,59);
+  // DD/MM/YYYY (BE ถ้า>2500, CE ถ้าน้อยกว่า)
+  const dmy=s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if(!dmy)return null;
+  const y=parseInt(dmy[3]),ceY=y>2500?y-543:y;
+  return new Date(ceY,parseInt(dmy[2])-1,parseInt(dmy[1]),23,59,59);
 }
 function leasingLogo(co){
   const m={

@@ -57,6 +57,7 @@ body{font-family:'Sarabun',system-ui,sans-serif;background:var(--bg);color:var(-
 .a-overdue{background:rgba(220,38,38,.04);}
 .a-today{background:rgba(234,88,12,.04);}
 .a-soon{background:rgba(217,119,6,.04);}
+.a-next{background:rgba(37,99,235,.04);border-left:4px solid #2563EB;}
 .alert-dot{font-size:14px;flex:none;}
 .alert-info{flex:1;min-width:0;}
 .alert-name{display:block;font-weight:700;font-size:14px;}
@@ -285,10 +286,21 @@ function badgeOf(it,done){
   return{cls:'soon',label:`ครบกำหนด วันที่ ${it.dueDay}`};
 }
 
-function fmtEndDate(iso){
-  if(!iso)return'-';
-  try{const d=new Date(iso+'T12:00:00');return d.toLocaleDateString('th-TH',{day:'numeric',month:'long',year:'numeric'});}
-  catch(e){return iso;}
+const TH_MONTHS=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const TH_MONTHS_S=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+function fmtEndDate(s){
+  if(!s||s==='-')return'-';
+  // รองรับ DD/MM/YYYY (พ.ศ.)
+  const m=s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if(m){return `${parseInt(m[1])} ${TH_MONTHS[parseInt(m[2])-1]} ${m[3]}`;}
+  return s;
+}
+function parseThDate(s){
+  if(!s)return null;
+  const m=s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if(!m)return null;
+  const ceY=parseInt(m[3])>2500?parseInt(m[3])-543:parseInt(m[3]);
+  return new Date(ceY,parseInt(m[2])-1,parseInt(m[1]),23,59,59);
 }
 function leasingLogo(co){
   const m={
@@ -348,7 +360,7 @@ function renderAlerts(){
   if(!ap)return;
   if(!urgent.length){ap.style.display='none';return;}
   ap.style.display='';
-  ap.innerHTML=`<div class="alert-wrap"><div class="alert-box"><div class="alert-hd"><span class="alert-hd-t">⚠️ แจ้งเตือนการชำระ</span><button class="alert-hd-btn" onclick="openNotifModal()">ตั้งค่า</button></div>${urgent.map(u=>`<div class="alert-row a-${u.level}"><span class="alert-dot">${u.level==='overdue'?'🔴':u.level==='today'?'🟠':'🟡'}</span><div class="alert-info"><span class="alert-name">${esc(u.name)}</span><span class="alert-msg">${u.level==='overdue'?`เกินกำหนด ${u.diff} วัน`:u.level==='today'?'ครบกำหนดชำระวันนี้':`ครบกำหนดในอีก ${u.diff} วัน (วันที่ ${u.dueDay})`}</span></div><span class="alert-amt">${baht(u.amt)}</span></div>`).join('')}</div></div>`;
+  ap.innerHTML=`<div class="alert-wrap"><div class="alert-box"><div class="alert-hd"><span class="alert-hd-t">⚠️ แจ้งเตือนการชำระ</span><button class="alert-hd-btn" onclick="openNotifModal()">ตั้งค่า</button></div>${urgent.map(u=>`<div class="alert-row a-${u.level==="next"?"next":u.level}"><span class="alert-dot">${u.level==='overdue'?'🔴':u.level==='today'?'🟠':u.level==='next'?'🔵':'🟡'}</span><div class="alert-info"><span class="alert-name">${esc(u.name)}</span><span class="alert-msg">${u.level==='overdue'?`เกินกำหนด ${u.diff} วัน · กำหนด ${u.nextDueFmt}`:u.level==='today'?`ครบกำหนดชำระวันนี้ (${u.nextDueFmt})`:u.level==='next'?`กำหนดถัดไป ${u.nextDueFmt} (อีก ${u.diff} วัน)`:`กำหนดชำระ ${u.nextDueFmt} (อีก ${u.diff} วัน)`}</span></div><span class="alert-amt">${baht(u.amt)}</span></div>`).join('')}</div></div>`;
 }
 
 function renderCars(){
@@ -368,7 +380,7 @@ function renderCards(){
 }
 
 function carHTML(c,urgent){
-  const done=c.contractEndDate?new Date(c.contractEndDate+'T23:59:59')<new Date():false;
+  const done=c.contractEndDate?parseThDate(c.contractEndDate)<new Date():false;
   const paidAmt=c.paid*c.monthly;
   const bd=badgeOf(c,done);
   const urg=urgent.find(u=>u.id===c.id);
@@ -490,7 +502,7 @@ function openEditModal(type,id){
 }
 function addEditFields(type,item,dueDay){
   if(type==='car'){
-    return `<label class="field"><span class="field-lbl">บริษัทไฟแนนซ์</span><select class="field-sel" id="f-finance"><option value="">-- เลือกบริษัทไฟแนนซ์ --</option>${FINANCE_COS.map(c=>`<option value="${c}"${item?.financeCompany===c?' selected':''}>${c}</option>`).join('')}</select></label><label class="field"><span class="field-lbl">ชื่อรถ / ทะเบียน</span><input class="field-inp" id="f-name" value="${esc(item?.name||'')}" placeholder="เช่น ISUZU 73-1896 นครปฐม"></label><label class="field"><span class="field-lbl">ค่างวด / งวด (บาท)</span><input class="field-inp" id="f-monthly" inputmode="numeric" value="${item?.monthly||''}"></label><label class="field"><span class="field-lbl">งวด (ชำระไปแล้ว)</span><input class="field-inp" id="f-paid" inputmode="numeric" value="${item?.paid||0}"></label><div class="grid2"><label class="field"><span class="field-lbl">วันครบกำหนดชำระ (วันที่)</span><input class="field-inp" id="f-dueday" inputmode="numeric" value="${dueDay||5}" placeholder="เช่น 5"></label><label class="field"><span class="field-lbl">วันสิ้นสุดสัญญา</span><input class="field-inp" id="f-enddate" type="date" value="${item?.contractEndDate||''}"></label></div>`;
+    return `<label class="field"><span class="field-lbl">บริษัทไฟแนนซ์</span><select class="field-sel" id="f-finance"><option value="">-- เลือกบริษัทไฟแนนซ์ --</option>${FINANCE_COS.map(c=>`<option value="${c}"${item?.financeCompany===c?' selected':''}>${c}</option>`).join('')}</select></label><label class="field"><span class="field-lbl">ชื่อรถ / ทะเบียน</span><input class="field-inp" id="f-name" value="${esc(item?.name||'')}" placeholder="เช่น ISUZU 73-1896 นครปฐม"></label><label class="field"><span class="field-lbl">ค่างวด / งวด (บาท)</span><input class="field-inp" id="f-monthly" inputmode="numeric" value="${item?.monthly||''}"></label><label class="field"><span class="field-lbl">งวด (ชำระไปแล้ว)</span><input class="field-inp" id="f-paid" inputmode="numeric" value="${item?.paid||0}"></label><div class="grid2"><label class="field"><span class="field-lbl">วันครบกำหนดชำระ (วันที่)</span><input class="field-inp" id="f-dueday" inputmode="numeric" value="${dueDay||5}" placeholder="เช่น 5"></label><label class="field"><span class="field-lbl">วันสิ้นสุดสัญญา</span><input class="field-inp" id="f-enddate" type="text" value="${item?.contractEndDate||''}" placeholder="เช่น 31/12/2571"></label></div>`;
   }else{
     return `<label class="field"><span class="field-lbl">ชื่อบัตร / ธนาคาร</span><input class="field-inp" id="f-name" value="${esc(item?.name||'')}" placeholder="เช่น KBank Visa Platinum"></label><div class="grid2"><label class="field"><span class="field-lbl">ยอดชำระ (บาท)</span><input class="field-inp" id="f-minpay" inputmode="numeric" value="${item?.minPay||''}"></label><label class="field"><span class="field-lbl">วันครบกำหนด</span><input class="field-inp" id="f-dueday" inputmode="numeric" value="${dueDay||25}"></label></div>`;
   }

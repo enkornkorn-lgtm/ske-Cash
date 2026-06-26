@@ -337,10 +337,8 @@ function calcUrgent(){
   };
 
   const check=(it,type)=>{
-    // แจ้งเตือนเฉพาะรายการที่ผู้ใช้เปิดแจ้งเตือน และงวดวันที่ 26 เป็นต้นไปเท่านั้น
-    // งวดก่อนวันที่ 26 จะไม่ถูกนำไปแสดงในกล่องแจ้งเตือน
+    // แจ้งเตือนเฉพาะรายการที่ผู้ใช้เปิดแจ้งเตือน
     if(it.notifyEnabled===false)return;
-    if((it.dueDay||0)<26)return;
 
     const done=type==='car'
       ?(it.contractEndDate?parseThDate(it.contractEndDate)<now:false)
@@ -350,8 +348,25 @@ function calcUrgent(){
 
     const amt=type==='car'?it.monthly:(it.minPay||0);
 
-    // ถ้าจ่ายเดือนนี้ครบและมีสลิปแล้ว ไม่ต้องแจ้งเตือน
-    if(isPaidThisMo(it))return;
+    // ถ้าจ่ายเดือนนี้ครบและมีสลิปแล้ว ไม่ต้องแจ้งเตือน และยกเลิกปักหมุดแจ้งเตือน
+    if(isPaidThisMo(it)){
+      it.forceNotify=false;
+      return;
+    }
+
+    // ถ้าผู้ใช้กดปุ่ม 🔔 แจ้งเตือน ให้ขึ้นกล่องแจ้งเตือนด้านบนทันที
+    if(it.forceNotify===true){
+      const nd=nextOcc(it.dueDay);
+      items.push({
+        id:it.id,name:it.name,type,
+        level:'manual',
+        diff:Math.max(0,Math.round((nd.date-now)/(1000*60*60*24))),
+        dueDay:it.dueDay,
+        amt,
+        nextDueFmt:nd.fmt
+      });
+      return;
+    }
 
     // ถ้ายังไม่จ่าย หรือจ่ายแล้วแต่ยังไม่มีสลิป ให้ยังแจ้งเตือนอยู่
     if(todayD>it.dueDay){
@@ -516,7 +531,7 @@ function renderAlerts(){
   if(!ap)return;
   if(!urgent.length){ap.style.display='none';return;}
   ap.style.display='';
-  ap.innerHTML=`<div class="alert-wrap"><div class="alert-box"><div class="alert-hd"><span class="alert-hd-t">⚠️ แจ้งเตือนการชำระ</span><button class="alert-hd-btn" onclick="openNotifModal()">ตั้งค่า</button></div>${urgent.map(u=>`<div class="alert-row a-${u.level==="next"?"next":u.level==="past"?"past":u.level}"><span class="alert-dot">${u.level==='past'?'🟡':u.level==='today'?'🟠':u.level==='next'?'🔵':'🟡'}</span><div class="alert-info"><span class="alert-name">${esc(u.name)}</span><span class="alert-msg">${u.level==='past'?`เลยกำหนดชำระ ${u.nextDueFmt} (${u.diff} วัน)`:u.level==='today'?`ครบกำหนดชำระวันนี้ (${u.nextDueFmt})`:u.level==='next'?`กำหนดถัดไป ${u.nextDueFmt} (อีก ${u.diff} วัน)`:`กำหนดชำระ ${u.nextDueFmt} (อีก ${u.diff} วัน)`}</span></div><span class="alert-amt">${baht(u.amt)}</span></div>`).join('')}</div></div>`;
+  ap.innerHTML=`<div class="alert-wrap"><div class="alert-box"><div class="alert-hd"><span class="alert-hd-t">⚠️ แจ้งเตือนการชำระ</span><button class="alert-hd-btn" onclick="openNotifModal()">ตั้งค่า</button></div>${urgent.map(u=>`<div class="alert-row a-${u.level==="manual"?"soon":u.level==="next"?"next":u.level==="past"?"past":u.level}"><span class="alert-dot">${u.level==='manual'?'🔔':u.level==='past'?'🟡':u.level==='today'?'🟠':u.level==='next'?'🔵':'🟡'}</span><div class="alert-info"><span class="alert-name">${esc(u.name)}</span><span class="alert-msg">${u.level==='manual'?`รอจ่าย · กำหนดชำระ ${u.nextDueFmt}`:u.level==='past'?`เลยกำหนดชำระ ${u.nextDueFmt} (${u.diff} วัน)`:u.level==='today'?`ครบกำหนดชำระวันนี้ (${u.nextDueFmt})`:u.level==='next'?`กำหนดถัดไป ${u.nextDueFmt} (อีก ${u.diff} วัน)`:`กำหนดชำระ ${u.nextDueFmt} (อีก ${u.diff} วัน)`}</span></div><span class="alert-amt">${baht(u.amt)}</span></div>`).join('')}</div></div>`;
 }
 
 function renderCars(){
@@ -565,7 +580,7 @@ function carHTML(c,urgent){
   </div>
   <div class="dk-actions">
     ${!done?`<button class="btn-pay" onclick="openPayModal('car','${c.id}')">บันทึกจ่ายงวด</button>`:''}
-    <button class="btn-sm${c.notifyEnabled===false?'':' active'}" onclick="toggleItemNotif('car','${c.id}')" title="เลือกให้รายการนี้แสดงแจ้งเตือน">${c.notifyEnabled===false?'🔕 ไม่แจ้งเตือน':'🔔 แจ้งเตือน'}</button>
+    <button class="btn-sm${c.notifyEnabled===false?'':' active'}" onclick="toggleItemNotif('car','${c.id}')" title="เลือกให้รายการนี้แสดงแจ้งเตือน">${c.notifyEnabled===false?'🔕 ไม่แจ้งเตือน':(c.forceNotify===true?'🔔 รอจ่าย':'🔔 แจ้งเตือน')}</button>
     <a class="btn-gcal" href="${gcalUrl('car',c)}" target="_blank" rel="noopener">📅 Google</a>
     <button class="btn-sm${isOpen?' active':''}" onclick="toggleHist('${c.id}','car')">${isOpen?'▲ ซ่อน':`ประวัติ (${pmts.length})`}</button>
     <button class="btn-sm" onclick="openEditModal('car','${c.id}')">✏️</button>
@@ -603,7 +618,7 @@ function ccHTML(c,urgent){
   </div>
   <div class="dk-actions">
     ${!done?`<button class="btn-pay" onclick="openPayModal('card','${c.id}')">บันทึกจ่าย</button>`:''}
-    <button class="btn-sm${c.notifyEnabled===false?'':' active'}" onclick="toggleItemNotif('card','${c.id}')" title="เลือกให้รายการนี้แสดงแจ้งเตือน">${c.notifyEnabled===false?'🔕 ไม่แจ้งเตือน':'🔔 แจ้งเตือน'}</button>
+    <button class="btn-sm${c.notifyEnabled===false?'':' active'}" onclick="toggleItemNotif('card','${c.id}')" title="เลือกให้รายการนี้แสดงแจ้งเตือน">${c.notifyEnabled===false?'🔕 ไม่แจ้งเตือน':(c.forceNotify===true?'🔔 รอจ่าย':'🔔 แจ้งเตือน')}</button>
     <a class="btn-gcal" href="${gcalUrl('card',c)}" target="_blank" rel="noopener">📅 Google</a>
     <button class="btn-sm${isOpen?' active':''}" onclick="toggleHist('${c.id}','card')">${isOpen?'▲ ซ่อน':`ประวัติ (${pmts.length})`}</button>
     <button class="btn-sm" onclick="openEditModal('card','${c.id}')">✏️</button>
@@ -686,8 +701,19 @@ function toggleItemNotif(type,id){
   const key=type==='car'?'carLoans':'creditCards';
   const idx=data[key].findIndex(x=>x.id===id);
   if(idx===-1)return;
+
   const cur=data[key][idx].notifyEnabled!==false;
-  data[key][idx].notifyEnabled=!cur;
+
+  if(cur){
+    // ปิดแจ้งเตือน: เอาออกจากกล่องแจ้งเตือนด้านบน
+    data[key][idx].notifyEnabled=false;
+    data[key][idx].forceNotify=false;
+  }else{
+    // เปิดแจ้งเตือน: ให้ขึ้นกล่องแจ้งเตือนด้านบนทันทีในสถานะรอจ่าย
+    data[key][idx].notifyEnabled=true;
+    data[key][idx].forceNotify=true;
+  }
+
   saveData();
   renderAll();
 }

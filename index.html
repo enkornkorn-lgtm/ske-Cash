@@ -337,6 +337,10 @@ function calcUrgent(){
   };
 
   const check=(it,type)=>{
+    // แจ้งเตือนเฉพาะงวดวันที่ 26 เป็นต้นไปเท่านั้น
+    // งวดก่อนวันที่ 26 จะไม่ถูกนำไปแสดงในกล่องแจ้งเตือน
+    if((it.dueDay||0)<26)return;
+
     const done=type==='car'
       ?(it.contractEndDate?parseThDate(it.contractEndDate)<now:false)
       :((it.balance||0)<=0&&(it.minPay||0)<=0);

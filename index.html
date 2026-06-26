@@ -337,8 +337,9 @@ function calcUrgent(){
   };
 
   const check=(it,type)=>{
-    // แจ้งเตือนเฉพาะงวดวันที่ 26 เป็นต้นไปเท่านั้น
+    // แจ้งเตือนเฉพาะรายการที่ผู้ใช้เปิดแจ้งเตือน และงวดวันที่ 26 เป็นต้นไปเท่านั้น
     // งวดก่อนวันที่ 26 จะไม่ถูกนำไปแสดงในกล่องแจ้งเตือน
+    if(it.notifyEnabled===false)return;
     if((it.dueDay||0)<26)return;
 
     const done=type==='car'
@@ -564,6 +565,7 @@ function carHTML(c,urgent){
   </div>
   <div class="dk-actions">
     ${!done?`<button class="btn-pay" onclick="openPayModal('car','${c.id}')">บันทึกจ่ายงวด</button>`:''}
+    <button class="btn-sm${c.notifyEnabled===false?'':' active'}" onclick="toggleItemNotif('car','${c.id}')" title="เลือกให้รายการนี้แสดงแจ้งเตือน">${c.notifyEnabled===false?'🔕 ไม่แจ้งเตือน':'🔔 แจ้งเตือน'}</button>
     <a class="btn-gcal" href="${gcalUrl('car',c)}" target="_blank" rel="noopener">📅 Google</a>
     <button class="btn-sm${isOpen?' active':''}" onclick="toggleHist('${c.id}','car')">${isOpen?'▲ ซ่อน':`ประวัติ (${pmts.length})`}</button>
     <button class="btn-sm" onclick="openEditModal('car','${c.id}')">✏️</button>
@@ -601,6 +603,7 @@ function ccHTML(c,urgent){
   </div>
   <div class="dk-actions">
     ${!done?`<button class="btn-pay" onclick="openPayModal('card','${c.id}')">บันทึกจ่าย</button>`:''}
+    <button class="btn-sm${c.notifyEnabled===false?'':' active'}" onclick="toggleItemNotif('card','${c.id}')" title="เลือกให้รายการนี้แสดงแจ้งเตือน">${c.notifyEnabled===false?'🔕 ไม่แจ้งเตือน':'🔔 แจ้งเตือน'}</button>
     <a class="btn-gcal" href="${gcalUrl('card',c)}" target="_blank" rel="noopener">📅 Google</a>
     <button class="btn-sm${isOpen?' active':''}" onclick="toggleHist('${c.id}','card')">${isOpen?'▲ ซ่อน':`ประวัติ (${pmts.length})`}</button>
     <button class="btn-sm" onclick="openEditModal('card','${c.id}')">✏️</button>
@@ -669,13 +672,24 @@ function saveAddEdit(){
   if(type==='car'){
     const financeCompany=document.getElementById('f-finance')?.value||'';const contractEndDate=document.getElementById('f-enddate')?.value||'';const item={name:name||'ค่างวดรถ',financeCompany,monthly:num(document.getElementById('f-monthly')?.value),total:9999,paid:Math.max(0,Math.round(num(document.getElementById('f-paid')?.value))),dueDay,contractEndDate};
     if(modalMode.startsWith('edit')){data.carLoans=data.carLoans.map(c=>c.id===modalItemId?{...c,...item}:c);}
-    else{data.carLoans.push({id:uid(),payments:[],...item});}
+    else{data.carLoans.push({id:uid(),payments:[],notifyEnabled:true,...item});}
   }else{
     const item={name:name||'บัตรเครดิต',balance:num(document.getElementById('f-balance')?.value),minPay:num(document.getElementById('f-minpay')?.value),dueDay};
     if(modalMode.startsWith('edit')){data.creditCards=data.creditCards.map(c=>c.id===modalItemId?{...c,...item}:c);}
-    else{data.creditCards.push({id:uid(),payments:[],...item});}
+    else{data.creditCards.push({id:uid(),payments:[],notifyEnabled:true,...item});}
   }
   saveData();closeModal();renderAll();
+}
+
+
+function toggleItemNotif(type,id){
+  const key=type==='car'?'carLoans':'creditCards';
+  const idx=data[key].findIndex(x=>x.id===id);
+  if(idx===-1)return;
+  const cur=data[key][idx].notifyEnabled!==false;
+  data[key][idx].notifyEnabled=!cur;
+  saveData();
+  renderAll();
 }
 
 function openPayModal(type,id){

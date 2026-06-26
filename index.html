@@ -122,6 +122,14 @@ body{font-family:'Sarabun',system-ui,sans-serif;background:var(--bg);color:var(-
 .btn-gcal{background:transparent;border:1.5px solid #4285F4;color:#4285F4;border-radius:10px;padding:9px 14px;font-family:'Sarabun';font-weight:600;font-size:13px;cursor:pointer;text-decoration:none;display:flex;align-items:center;gap:4px;}
 .btn-sm{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:9px 12px;font-family:'Sarabun';font-weight:600;font-size:13px;cursor:pointer;}
 .btn-sm.active{background:#EFF6FF;border-color:#BFDBFE;color:var(--blue);}
+.btn-history{
+  background:linear-gradient(135deg,#FFFFFF 0%,#EFF6FF 48%,#FFF7ED 100%);
+  border:1.5px solid #BFDBFE;color:var(--navy);border-radius:12px;padding:8px 12px;
+  font-family:'Sarabun';font-weight:700;font-size:13px;cursor:pointer;
+  display:flex;align-items:center;gap:6px;box-shadow:0 4px 10px rgba(37,99,235,.12),inset 0 1px 0 rgba(255,255,255,.9);
+}
+.btn-history .hico{width:24px;height:24px;border-radius:8px;background:linear-gradient(135deg,var(--blue),var(--orange));display:inline-flex;align-items:center;justify-content:center;color:#fff;font-size:13px;box-shadow:0 3px 8px rgba(234,88,12,.25);}
+.btn-history.active{background:linear-gradient(135deg,#DBEAFE 0%,#FFFFFF 48%,#FFEDD5 100%);border-color:#60A5FA;color:var(--blue);}
 .btn-del{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:9px 12px;font-size:13px;cursor:pointer;}
 
 /* history */
@@ -220,6 +228,7 @@ body{font-family:'Sarabun',system-ui,sans-serif;background:var(--bg);color:var(-
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 </head>
 <body>
 <div id="app">
@@ -284,6 +293,7 @@ if(FB_OK){
   try{
     firebase.initializeApp(FB);
     fbDb = firebase.database();
+    fbSt = firebase.storage();
     fbRef = fbDb.ref('debtData');
   }catch(e){console.error('Firebase init:',e);}
 }
@@ -394,12 +404,13 @@ function calcUrgent(){
   const p={manual:0,past:1,today:2,soon:3,next:4};
   return items.sort((a,b)=>p[a.level]-p[b.level]||a.diff-b.diff);
 }
+function hasPaymentImage(p){
+  return !!(p && (p.imgUrl || p.imgKey || p.image || p.imageData || p.slip || p.photo || p.file || p.receipt || p.receiptImage || p.slipImage));
+}
 function isPaidThisMo(it){
-  if(!it.lastPaid || ymOf(new Date(it.lastPaid))!==todayYM()) return false;
   const pmts=it.payments||[];
-  const latest=pmts[0]||{};
-  // ถือว่าชำระสมบูรณ์เมื่อมีการแนบสลิป/รูปประกอบด้วย
-  return !!(latest.image || latest.imageData || latest.slip || latest.photo || latest.file);
+  // ถือว่าชำระสมบูรณ์เมื่อมีรายการชำระของเดือนนี้ และมีสลิป/รูปหลักฐานแนบแล้ว
+  return pmts.some(p=>p?.date && ymOf(new Date(p.date))===todayYM() && hasPaymentImage(p));
 }
 function badgeOf(it,done){
   if(done)return{cls:'ok',label:'ชำระครบแล้ว'};
@@ -581,7 +592,7 @@ function carHTML(c,urgent){
     ${!done?`<button class="btn-pay" onclick="openPayModal('car','${c.id}')">บันทึกจ่ายงวด</button>`:''}
     <button class="btn-sm${(c.notifyEnabled!==false&&c.manualAlert===true)?' active':''}" onclick="toggleItemNotif('car','${c.id}')" title="เลือกให้รายการนี้แสดงแจ้งเตือน">${(c.notifyEnabled!==false&&c.manualAlert===true)?'🔕 ไม่แจ้งเตือน':'🔔 แจ้งเตือน'}</button>
     <a class="btn-gcal" href="${gcalUrl('car',c)}" target="_blank" rel="noopener">📅 Google</a>
-    <button class="btn-sm${isOpen?' active':''}" onclick="toggleHist('${c.id}','car')">${isOpen?'▲ ซ่อน':`ประวัติ (${pmts.length})`}</button>
+    <button class="btn-history${isOpen?' active':''}" onclick="toggleHist('${c.id}','car')" title="ประวัติการชำระ"><span class="hico">🧾</span>${isOpen?'ซ่อน':`ประวัติ (${pmts.length})`}</button>
     <button class="btn-sm" onclick="openEditModal('car','${c.id}')">✏️</button>
     <button class="btn-del" onclick="removeItem('car','${c.id}')">🗑️</button>
   </div>
@@ -619,7 +630,7 @@ function ccHTML(c,urgent){
     ${!done?`<button class="btn-pay" onclick="openPayModal('card','${c.id}')">บันทึกจ่าย</button>`:''}
     <button class="btn-sm${(c.notifyEnabled!==false&&c.manualAlert===true)?' active':''}" onclick="toggleItemNotif('card','${c.id}')" title="เลือกให้รายการนี้แสดงแจ้งเตือน">${(c.notifyEnabled!==false&&c.manualAlert===true)?'🔕 ไม่แจ้งเตือน':'🔔 แจ้งเตือน'}</button>
     <a class="btn-gcal" href="${gcalUrl('card',c)}" target="_blank" rel="noopener">📅 Google</a>
-    <button class="btn-sm${isOpen?' active':''}" onclick="toggleHist('${c.id}','card')">${isOpen?'▲ ซ่อน':`ประวัติ (${pmts.length})`}</button>
+    <button class="btn-history${isOpen?' active':''}" onclick="toggleHist('${c.id}','card')" title="ประวัติการชำระ"><span class="hico">🧾</span>${isOpen?'ซ่อน':`ประวัติ (${pmts.length})`}</button>
     <button class="btn-sm" onclick="openEditModal('card','${c.id}')">✏️</button>
     <button class="btn-del" onclick="removeItem('card','${c.id}')">🗑️</button>
   </div>
@@ -631,22 +642,26 @@ function renderHist(id,type){
   const el=document.getElementById('hist-'+id);if(!el)return;
   const key=type==='car'?'carLoans':'creditCards';
   const item=data[key].find(x=>x.id===id);
+  loadImgsFor(item?.payments||[]);
   const pmts=item?.payments||[];
   if(!pmts.length){el.innerHTML='<div class="hist-wrap"><div class="hist-empty">ยังไม่มีประวัติการชำระ</div></div>';return;}
   el.innerHTML='<div class="hist-wrap"><div class="hist-hdr-row">ประวัติการชำระ</div>'+pmts.map(p=>{
-    const src=imgSrc(p)||null;const thumb=src?`<img class="hist-thumb" src="${src}" onclick="openLightboxDirect('${src}')" alt="สลิป">`:'';
-    return `<div class="hist-row"><div class="hist-left"><div class="hist-date">${thDate(p.date)}</div><div class="hist-amt">${baht(p.amount)}</div>${p.note?`<div class="hist-note">${esc(p.note)}</div>`:''}</div><div class="hist-right">${thumb}<button class="hist-del" onclick="deletePayment('${type}','${id}','${p.id}','${p.imgKey||''}')">✕</button></div></div>`;
+    const src=imgSrc(p)||null;
+    const thumb=src
+      ? `<img class="hist-thumb" src="${esc(src)}" onclick="openPaymentLightbox('${type}','${id}','${p.id}')" alt="สลิป">`
+      : '<div class="hist-thumb-ph" title="รายการนี้ไม่มีรูปสลิป">🧾</div>';
+    return `<div class="hist-row"><div class="hist-left"><div class="hist-date">${thDate(p.date)}</div><div class="hist-amt">${baht(p.amount)}</div>${p.note?`<div class="hist-note">${esc(p.note)}</div>`:''}</div><div class="hist-right">${thumb}<button class="hist-del" onclick="deletePayment('${type}','${id}','${p.id}','${p.imgPath||p.imgUrl||p.imgKey||''}')">✕</button></div></div>`;
   }).join('')+'</div>';
 }
 
 function toggleHist(id,type){
   const el=document.getElementById('hist-'+id);
-  const btn=document.querySelector(`#card-${id} .btn-sm`);
+  const btn=document.querySelector(`#card-${id} .btn-history`);
   if(histOpen.has(id)){
     histOpen.delete(id);if(el)el.style.display='none';
     const key=type==='car'?'carLoans':'creditCards';
     const item=data[key].find(x=>x.id===id);
-    if(btn){btn.classList.remove('active');btn.textContent=`ประวัติ (${(item?.payments||[]).length})`;}
+    if(btn){btn.classList.remove('active');btn.innerHTML=`<span class="hico">🧾</span>ประวัติ (${(item?.payments||[]).length})`;}
   }else{
     histOpen.add(id);
     const key=type==='car'?'carLoans':'creditCards';
@@ -654,7 +669,7 @@ function toggleHist(id,type){
     loadImgsFor(item?.payments||[]);
     if(el)el.style.display='block';
     renderHist(id,type);
-    if(btn){btn.classList.add('active');btn.textContent='▲ ซ่อน';}
+    if(btn){btn.classList.add('active');btn.innerHTML='<span class="hico">🧾</span>ซ่อน';}
   }
 }
 
@@ -721,7 +736,7 @@ function openPayModal(type,id){
   const key=type==='car'?'carLoans':'creditCards';
   const item=data[key].find(x=>x.id===id);if(!item)return;
   const defAmt=type==='car'?item.monthly:(item.minPay||'');
-  openOverlay(`<div class="sheet-grip"></div><h3 class="sh-title">บันทึกการชำระ</h3><p class="sh-sub">${esc(item.name)}</p><label class="field"><span class="field-lbl">จำนวนเงิน (บาท)</span><input class="field-inp" id="pay-amt" inputmode="numeric" value="${defAmt}"></label><label class="field"><span class="field-lbl">หมายเหตุ (ไม่บังคับ)</span><input class="field-inp" id="pay-note" placeholder="เช่น โอน app, หักบัญชี"></label><div class="img-area"><span class="field-lbl" style="font-size:14px;">📷 แนบสลิป / รูปหลักฐาน <span style="color:var(--muted2);font-weight:400;">(เก็บในประวัติ)</span></span><div id="img-area-content"></div></div><div class="sh-actions"><button class="btn-sm" onclick="closeModal()">ยกเลิก</button><button class="btn-pay" onclick="recordPayment()">✓ บันทึก</button></div>`);
+  openOverlay(`<div class="sheet-grip"></div><h3 class="sh-title">บันทึกการชำระ</h3><p class="sh-sub">${esc(item.name)}</p><label class="field"><span class="field-lbl">จำนวนเงิน (บาท)</span><input class="field-inp" id="pay-amt" inputmode="numeric" value="${defAmt}"></label><label class="field"><span class="field-lbl">หมายเหตุ (ไม่บังคับ)</span><input class="field-inp" id="pay-note" placeholder="เช่น โอน app, หักบัญชี"></label><div class="img-area"><span class="field-lbl" style="font-size:14px;">📷 แนบสลิป / รูปหลักฐาน <span style="color:var(--muted2);font-weight:400;">(เก็บในประวัติ)</span></span><div id="img-area-content"></div></div><div class="sh-actions"><button class="btn-sm" onclick="closeModal()">ยกเลิก</button><button class="btn-pay" id="pay-btn" onclick="recordPayment()">✓ บันทึก</button></div>`);
   renderImgPreview();
 }
 
@@ -745,13 +760,44 @@ async function onFilePick(e){
   renderImgPreview();e.target.value='';
 }
 
-// ── Image sync via Realtime Database (ไม่ต้องใช้ Storage) ──
-function uploadImg(base64){
-  // เก็บ base64 ไว้ใน payment record → sync ผ่าน RTDB อัตโนมัติ
-  return base64;
+// ── Image sync via Firebase Storage ──
+async function uploadImg(base64,paymentId){
+  // อัปโหลดรูปไป Firebase Storage เพื่อให้เปิดจากมือถือ/เครื่องอื่นแล้วยังเห็นรูปในประวัติ
+  // ถ้า Storage ใช้ไม่ได้ จะ fallback เก็บ base64 ไว้กับรายการนั้นแทน
+  if(FB_OK && fbSt && base64 && base64.startsWith('data:image')){
+    const path=`payment_slips/${todayYM().replace('-','_')}/${paymentId||uid()}_${Date.now()}.jpg`;
+    try{
+      const ref=fbSt.ref(path);
+      await ref.putString(base64,'data_url',{contentType:'image/jpeg'});
+      const url=await ref.getDownloadURL();
+      return {url,path,stored:'storage'};
+    }catch(e){
+      console.error('Storage upload failed, fallback to base64:',e);
+    }
+  }
+  return {url:base64,path:null,stored:'base64'};
 }
-async function deleteImgCloud(url){ /* ลบพร้อม payment record เลย */ }
-function imgSrc(p){ return p.imgUrl||null; }
+async function deleteImgCloud(pathOrUrl){
+  if(!pathOrUrl || !FB_OK || !fbSt)return;
+  try{
+    let ref;
+    if(String(pathOrUrl).startsWith('http')) ref=fbSt.refFromURL(pathOrUrl);
+    else ref=fbSt.ref(pathOrUrl);
+    await ref.delete();
+  }catch(e){console.warn('delete image skipped:',e);}
+}
+function imgSrc(p){
+  if(!p)return null;
+  return p.imgUrl || p.downloadURL || p.imageUrl || p.imageData || p.image || p.slip || p.photo || p.file || p.receipt || p.receiptImage || p.slipImage || (p.imgKey?imgCache[p.imgKey]:null) || null;
+}
+function openPaymentLightbox(type,itemId,pmtId){
+  const key=type==='car'?'carLoans':'creditCards';
+  const item=data[key].find(x=>x.id===itemId);
+  const p=(item?.payments||[]).find(x=>x.id===pmtId);
+  const src=imgSrc(p);
+  if(src)openLightboxDirect(src);
+}
+
 
 function compressImage(file){
   return new Promise((resolve,reject)=>{
@@ -760,23 +806,30 @@ function compressImage(file){
     reader.readAsDataURL(file);
   });
 }
-function recordPayment(){
+async function recordPayment(){
   const amt=num(document.getElementById('pay-amt')?.value);if(!amt||amt<=0)return;
   const note=(document.getElementById('pay-note')?.value||'').trim();
   const type=modalMode.replace('pay-','');
   const key=type==='car'?'carLoans':'creditCards';
   const idx=data[key].findIndex(x=>x.id===modalItemId);if(idx===-1){closeModal();return;}
-  const pmt={id:uid(),date:todayISO(),amount:amt,note,imgKey:null};
-  if(pendingImg){
+  const pmt={id:uid(),date:todayISO(),amount:amt,note,imgKey:null,imgUrl:null,imgPath:null,imgStored:null};
+  const hasSlip=!!pendingImg;
+  if(hasSlip){
     const btn=document.getElementById('pay-btn');
-    if(btn){btn.disabled=true;btn.textContent='⏳ กำลังอัปโหลด...';}
-    pmt.imgUrl = uploadImg(pendingImg);
-    pendingImgFile = null;
+    if(btn){btn.disabled=true;btn.textContent='⏳ กำลังอัปโหลดรูป...';}
+    const uploaded=await uploadImg(pendingImg,pmt.id);
+    pmt.imgUrl=uploaded.url;
+    pmt.imgPath=uploaded.path;
+    pmt.imgStored=uploaded.stored;
+    // เก็บ base64 เฉพาะกรณีอัปโหลด Storage ไม่สำเร็จ เพื่อกันข้อมูลใหญ่เกินใน Firebase Database
+    if(uploaded.stored==='base64')pmt.imageData=pendingImg;
   }
   const item=data[key][idx];
   const newPmts=[pmt,...(item.payments||[])];
-  if(type==='car'){data[key][idx]={...item,paid:Math.min(item.total,item.paid+1),lastPaid:pmt.date,payments:newPmts};}
-  else{data[key][idx]={...item,balance:Math.max(0,item.balance-amt),lastPaid:pmt.date,payments:newPmts};}
+  // เมื่อมีการบันทึกชำระพร้อมรูปหลักฐาน ให้เอาออกจากรายการแจ้งเตือน/รอจ่ายทันที
+  const clearedAlert = hasSlip ? {manualAlert:false, notifyEnabled:true} : {};
+  if(type==='car'){data[key][idx]={...item,...clearedAlert,paid:Math.min(item.total,item.paid+1),lastPaid:pmt.date,payments:newPmts};}
+  else{data[key][idx]={...item,...clearedAlert,balance:Math.max(0,item.balance-amt),lastPaid:pmt.date,payments:newPmts};}
   saveData();pendingImg=null;
   const id=modalItemId;
   justPaidId=id;if(justPaidTimer)clearTimeout(justPaidTimer);
